@@ -33,7 +33,7 @@ INFO_003="INFO: Wifi {} Connected"
 INFO_004="INFO: Retrieving unpublished data"
 INFO_005="INFO: Publishing stored data"
 INFO_006="INFO: Gathering Data"
-INFO_007=""
+INFO_007="INFO: Connecting BT"
 INFO_008="INFO: CAR Connected on port {}"
 INFO_009="INFO: Folder Created {}"
 INFO_010="INFO: Connecting Wifi {}"
@@ -80,7 +80,7 @@ def scanForCells():
         if not cell.encrypted:
             cells_dict[cell.ssid]=cell.quality  
             scheme = Scheme.for_cell('wlan0', 'home', cell, passkey=None)
-            print(INFO_010.format(cell.ssid))
+            show_message(INFO_010.format(cell.ssid))
     return cells
 
 def read_byte(reg):
@@ -142,6 +142,7 @@ def upload_previous():
     return 0
 
 def connect_bluetooth():
+    show_message(INFO_007)
     global connection
     retries = 0
     connection = obd.OBD() # auto-connects to USB or RF port 
