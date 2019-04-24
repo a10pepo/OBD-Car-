@@ -37,8 +37,8 @@ INFO_007="INFO: Connecting BT"
 INFO_008="INFO: CAR Connected on port {}"
 INFO_009="INFO: Folder Created {}"
 INFO_010="INFO: Connecting Wifi {}"
-
-
+INFO_011="INFO: Network already present {}"
+INFO_012="INFO: WIFI included in list {}"
 
 # ERROR MESSAGES
 ERROR_001="ERROR: Connection not established with ELM"
@@ -49,7 +49,7 @@ ERROR_005="ERROR: Connection not established with CAR"
 ERROR_006="ERROR: NOT Connected BYE"
 ERROR_007="ERROR: Data Folder not created"
 ERROR_008="ERROR: Telemetry Error: {}"
-
+ERROR_009="ERROR: Telemetry Error on sensor: {}"
 
 mode=0   # 0 Offline  1 Online
 trip_timestamp=0
@@ -74,14 +74,36 @@ def show_message(message):
 def scanForCells():
     # Scan using wlan0
     cells = Cell.all('wlan0')
-    cells_dict={}
+    reboot=False
     # Loop over the available cells
     for cell in cells:
         if not cell.encrypted:
-            cells_dict[cell.ssid]=cell.quality  
-            scheme = Scheme.for_cell('wlan0', 'home', cell, passkey=None)
             show_message(INFO_010.format(cell.ssid))
+            if append_wpa(cell.ssid):
+                reboot=True
+    if reboot:
+        restart()
     return cells
+
+def append_wpa(ssid):
+    append=True
+        
+    for line in open("/etc/wpa_supplicant/wpa_supplicant.conf"):
+        if "ssid=\"{}\"".format(ssid) in line:
+            append=False
+    
+    if "HP" in ssid or "Chromecast" in ssid:
+        append=False 
+    
+    if append:
+        json_data="\nnetwork={{ \n   ssid=\"{}\"\n   key_mgmt=NONE \n}}\n".format(ssid)
+        f=open("/etc/wpa_supplicant/wpa_supplicant.conf", 'a+')
+        f.write(json_data)
+        f.close()
+        show_message(INFO_012.format(ssid))
+        return True
+    else:
+        logging.info(INFO_011.format(ssid))
 
 def read_byte(reg):
     return bus.read_byte_data(address, reg)
@@ -110,16 +132,24 @@ def get_x_rotation(x,y,z):
     radians = math.atan2(y, dist(x,z))
     return math.degrees(radians)
 
+def restart():
+    command = "/usr/bin/sudo /sbin/shutdown -r now"
+    import subprocess
+    process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
+    output = process.communicate()[0]
+    logging.info(output)
+
 #### FUNCTIONS
     
 def setup_wifi():
     show_message(INFO_002)
     # get all cells from the air    
-    cells = scanForCells()
     host=check_output(['hostname', '-I'])
-    wifi=check_output(['iwgetid'])
-    logging.info("Connected to host: {}".format(host))
-    logging.info("Connected to wifi: {}".format(wifi))
+    try:
+        wifi=check_output(['iwgetid'])
+    except Exception as e:
+        logging.info("Connected to host: {}".format(host))
+    logging.info(str(host))  
     if len(host)>4:
         show_message(INFO_003.format(wifi))
     else:       
@@ -303,22 +333,27 @@ def collect_data():
             logging.info(str(error))
             show_message(ERROR_008.format(str(error)))
 
-def query_value(cmd,field):   
-    response = connection.query(cmd) # send the command, and parse the response    
-    if field == "":
-        return response.value
-    else:
-        return response.value.to(field) 
-
+def query_value(cmd,field):
+    try:
+        response = connection.query(cmd) # send the command, and parse the response    
+        if field == "":
+            return response.value
+        else:
+            return response.value.to(field) 
+    except Exception as e:
+        show_message(ERROR_009.format(cmd))
 
 def init_setup():
     try:
         if not os.path.exists("data"):
             os.mkdir("data")
+            show_message(INFO_009.format("data"))
+        else:
+            return
     except OSError:  
         show_message(ERROR_007)
-    else:  
-        show_message(INFO_009.format("data"))
+ 
+        
 
 def main():
     global trip_timestamp
@@ -330,6 +365,7 @@ def main():
     connect_bluetooth()
     upload_previous()
     collect_data()
+
     
 
 main()
